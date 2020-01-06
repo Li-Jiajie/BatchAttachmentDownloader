@@ -101,7 +101,7 @@ class MergeSaver(Saver):
 class AddressClassifySaver(Saver):
     def __init__(self, root_path, file_name, file_data, email_address):
         super().__init__(root_path, file_name, file_data)
-        self._email_address = email_address
+        self._email_address = self.normalize_directory_name(email_address)
 
     def save(self):
         self._save_file(os.path.join(self._root_path, self._email_address))
@@ -121,7 +121,7 @@ class SubjectClassifySaver(Saver):
 class AddressSubjectClassifySaver(Saver):
     def __init__(self, root_path, file_name, file_data, email_address, email_subject):
         super().__init__(root_path, file_name, file_data)
-        self._email_address = email_address
+        self._email_address = self.normalize_directory_name(email_address)
         self._email_subject = self.normalize_directory_name(email_subject)
 
     def save(self):
@@ -132,7 +132,7 @@ class AddressSubjectClassifySaver(Saver):
 class AliasClassifySaver(Saver):
     def __init__(self, root_path, file_name, file_data, from_alias):
         super().__init__(root_path, file_name, file_data)
-        self._from_alias = from_alias
+        self._from_alias = self.normalize_directory_name(from_alias)
 
     def save(self):
         self._save_file(os.path.join(self._root_path, self._from_alias))
