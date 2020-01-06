@@ -1,10 +1,28 @@
+"""
+https://github.com/Li-Jiajie/BatchAttachmentDownloader
+
+BatchAttachmentDownloader   v1.2.1
+邮件附件批量下载
+Python 3开发，基于POP3协议
+
+支持多种附件保存模式、筛选模式
+
+使用场景：通过邮箱收作业、调查等，批量下载附件    等
+
+2020.01.06
+Jiajie Li
+"""
+
+
 import email_helper
 
-# 邮箱地址
+# ************************请设置以下参数************************
+
+# 邮箱地址  （必填）
 EMAIL_ADDRESS = '*****your email address*****'
-# 邮箱密码
+# 邮箱密码  （必填）
 EMAIL_PASSWORD = '*****your email password*****'
-# POP3服务器地址(SSL)
+# POP3服务器地址(SSL)    （必填）
 POP3_SERVER_ADDRESS = '*****pop3 server address*****'
 # 附件保存位置
 SAVE_PATH = 'F:\\Email-Attachments'
@@ -18,15 +36,17 @@ FROM_ADDRESS = ''
 FROM_NAME = ''
 # 筛选包含此内容的邮件主题，''表示全部邮件主题
 SUBJECT = ''
-
 """
     保存模式    SAVE_MODE
 【0：所有附件存入一个文件夹】
 【1：每个邮箱地址一个文件夹】
-【2：每个发件人的每个邮件一个文件夹】
-【3：每个发件人昵称一个文件夹】
+【2：每个邮件主题一个文件夹】
+【3：每个发件人的每个邮件主题一个文件夹】
+【4：每个发件人昵称一个文件夹】
 """
-SAVE_MODE = 2
+SAVE_MODE = 1
+
+# ************************请设置以上参数************************
 
 
 if __name__ == '__main__':

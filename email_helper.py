@@ -107,8 +107,18 @@ class AddressClassifySaver(Saver):
         self._save_file(os.path.join(self._root_path, self._email_address))
 
 
-# 模式2：每个发件人的每个邮件一个文件夹,邮件按照主题分
+# 模式2：每个邮件主题一个文件夹
 class SubjectClassifySaver(Saver):
+    def __init__(self, root_path, file_name, file_data, email_subject):
+        super().__init__(root_path, file_name, file_data)
+        self._email_subject = self.normalize_directory_name(email_subject)
+
+    def save(self):
+        self._save_file(os.path.join(self._root_path, self._email_subject))
+
+
+# 模式3：每个发件人的每个邮件主题一个文件夹
+class AddressSubjectClassifySaver(Saver):
     def __init__(self, root_path, file_name, file_data, email_address, email_subject):
         super().__init__(root_path, file_name, file_data)
         self._email_address = email_address
@@ -118,7 +128,7 @@ class SubjectClassifySaver(Saver):
         self._save_file(os.path.join(self._root_path, self._email_address, self._email_subject))
 
 
-# 模式3：每个发件人昵称一个文件夹
+# 模式4：每个发件人昵称一个文件夹
 class AliasClassifySaver(Saver):
     def __init__(self, root_path, file_name, file_data, from_alias):
         super().__init__(root_path, file_name, file_data)
@@ -134,13 +144,23 @@ class SaverFactor:
         self.__mode = mode
 
     def __call__(self, root_path, file_name, file_data, email_info: EmailInfo):
+        """
+            保存模式    SAVE_MODE
+        【0：所有附件存入一个文件夹】
+        【1：每个邮箱地址一个文件夹】
+        【2：每个邮件主题一个文件夹】
+        【3：每个发件人的每个邮件主题一个文件夹】
+        【4：每个发件人昵称一个文件夹】
+        """
         if self.__mode == 0:
             return MergeSaver(root_path, file_name, file_data)
         elif self.__mode == 1:
             return AddressClassifySaver(root_path, file_name, file_data, email_info.from_address)
         elif self.__mode == 2:
-            return SubjectClassifySaver(root_path, file_name, file_data, email_info.from_address, email_info.subject)
+            return SubjectClassifySaver(root_path, file_name, file_data, email_info.subject)
         elif self.__mode == 3:
+            return AddressSubjectClassifySaver(root_path, file_name, file_data, email_info.from_address, email_info.subject)
+        elif self.__mode == 4:
             return AliasClassifySaver(root_path, file_name, file_data, email_info.from_name)
         else:
             return None
@@ -278,16 +298,16 @@ class BatchEmail:
         # 倒序读取（从最新的开始）
         for mail_info in reversed(mail_list):
             mail_number = int(bytes.decode(mail_info).split()[0])  # 从mail_list解析邮件编号
-            # mail_number = 66
-            # print(mail_number, end='  ')
+            # mail_number = 590     # debug
 
             try:
                 # TOP命令接收前n行，此处仅读取邮件属性，读部分数据可加快速度。TOP非所有服务器支持，若不支持请使用RETR。
-                response, content_byte, octets = self.__connection.top(mail_number, 50)
-                mail_message = self.parse_mail_byte_content(content_byte)
+                response, content_byte, octets = self.__connection.top(mail_number, 40)
+                mail_header_end = content_byte.index(b'')
+                mail_message = self.parse_mail_byte_content(content_byte[:mail_header_end])     # 第一个空行前之是头部信息 RFC822
                 message_info = self.__get_email_info(mail_message)
             except Exception as e:
-                print('邮件接收或解码失败，邮件编号：', mail_number, '错误信息：', e)
+                print('邮件接收或解码失败，邮件编号：[', mail_number, ']  错误信息：', e)
                 error_count += 1
                 continue
 
@@ -306,7 +326,8 @@ class BatchEmail:
             else:
                 print('( %d / %d )【%s】不符合筛选条件，下一封' % (len(mail_list) - mail_number + 1, len(mail_list), message_info.subject))
         print('处理完成')
-        print('有 %d 个邮件发生错误，请手动检查' % error_count)
+        if error_count > 0:
+            print('有 %d 个邮件发生错误，请手动检查' % error_count)
 
     def close(self):
         if self.__connection is not None:
@@ -322,17 +343,27 @@ class BatchEmail:
         result_content = []
         for value, charset in decode_header(content):
             if type(value) != str:
-                if charset is not None:
-                    value = value.decode(charset)
+                if charset is None:
+                    value = value.decode(errors='replace')
+                elif charset.lower() in ['gbk', 'gb2312', 'gb18030']:
+                    # 一些特殊符号标着gbk，但编码可能是gb18030中的。gb18030向下兼容gbk、gb2312，所以一律用gb18030。
+                    value = value.decode(encoding='gb18030', errors='replace')
                 else:
-                    value = value.decode()
+                    value = value.decode(charset, errors='replace')
+
             result_content.append(value)
         return ' '.join(result_content)
 
     @staticmethod
     # 把邮件内容解析为Message对象
     def parse_mail_byte_content(content_byte):
-        mail_content = '\n'.join([line_byte.decode() for line_byte in content_byte])
+        # 极个别邮件中，同一封邮件存在多种编码，那么就不要join后整体解码，而是每一行单独解码。情况少见，暂时忽略。
+        mail_content = b'\n'.join(content_byte)
+        try:
+            mail_content = mail_content.decode()
+        except UnicodeDecodeError as e:
+            mail_content = mail_content.decode(encoding='GB18030', errors='replace')   # GB18030兼容GB231、GBK
+
         return Parser().parsestr(mail_content)
 
     def __save_email_attachments(self, message: Message, email_info):
