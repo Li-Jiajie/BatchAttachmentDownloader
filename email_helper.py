@@ -7,6 +7,8 @@ from email.utils import parseaddr
 from email.message import Message
 import poplib
 import datetime
+import imaplib
+import email
 
 
 # 邮件信息类
@@ -159,7 +161,8 @@ class SaverFactor:
         elif self.__mode == 2:
             return SubjectClassifySaver(root_path, file_name, file_data, email_info.subject)
         elif self.__mode == 3:
-            return AddressSubjectClassifySaver(root_path, file_name, file_data, email_info.from_address, email_info.subject)
+            return AddressSubjectClassifySaver(root_path, file_name, file_data, email_info.from_address,
+                                               email_info.subject)
         elif self.__mode == 4:
             return AliasClassifySaver(root_path, file_name, file_data, email_info.from_name)
         else:
@@ -175,7 +178,7 @@ class EmailJudge:
 
 # 日期判断
 class DateJudge(EmailJudge):
-    def __init__(self, date_begin, date_end,  time_zone, email_date):
+    def __init__(self, date_begin, date_end, time_zone, email_date):
         self.__date_begin = date_begin
         self.__date_end = date_end
         self.__time_zone = time_zone
@@ -187,6 +190,13 @@ class DateJudge(EmailJudge):
         date_begin = datetime.datetime.strptime((self.__date_begin + self.__time_zone), '%Y-%m-%d %H:%M%z')
         date_end = datetime.datetime.strptime((self.__date_end + self.__time_zone), '%Y-%m-%d %H:%M%z')
         return date_begin < date_mail < date_end
+
+    @staticmethod
+    # 比较是否比Target时间更早，用于结束邮件遍历的循环。包含时区。
+    def is_earlier(email_time, target_time):
+        email_datetime = datetime.datetime.strptime(email_time, '%d %b %Y %H:%M:%S %z')
+        target_datetime = datetime.datetime.strptime(target_time, '%Y-%m-%d %H:%M%z')
+        return email_datetime < target_datetime
 
 
 # 邮件主题判断
@@ -236,78 +246,55 @@ class EmailFilter:
 
 # 批量邮件下载类
 class BatchEmail:
-    def __init__(self, pop3_server, email_address, email_password):
-        self.__pop3_server = pop3_server
-        self.__email_address = email_address
-        self.__email_password = email_password
-        self.__save_mode = 0        # 附件保存模式
-        self.save_path = 'Email-Attachments'        # 附件保存位置
+    def __init__(self, mode, email_server, email_address, email_password):
+        self.__save_mode = 0  # 附件保存模式
+        self.save_path = 'Email-Attachments'  # 附件保存位置
 
         # 筛选属性
-        self.date_begin, self.date_end = '2020-1-1 00:00', '2020-1-4 20:00'     # 筛选属性：起止时间
-        self.time_zone = '+0800'     # 筛选属性：时区
-        self.from_address = ''     # 筛选属性：发件人地址
-        self.from_name = ''     # 筛选属性：发件人姓名
-        self.subject = ''     # 筛选属性：邮件主题
+        self.date_begin, self.date_end = '2020-1-1 00:00', '2020-1-4 20:00'  # 筛选属性：起止时间
+        self.time_zone = '+0800'  # 筛选属性：时区
+        self.from_address = ''  # 筛选属性：发件人地址
+        self.from_name = ''  # 筛选属性：发件人姓名
+        self.subject = ''  # 筛选属性：邮件主题
 
-        self.__connection = None
         self.__saver_factor = None
+
+        if mode.lower().find('pop') != -1:
+            self.__receiver = Pop3Receiver(email_server, email_address, email_password)
+        elif mode.lower().find('imap') != -1:
+            self.__receiver = ImapReceiver(email_server, email_address, email_password)
+        else:
+            print('请选择邮件协议，POP3或IMAP。')
+            return
 
     def set_save_mode(self, save_mode):
         self.__save_mode = save_mode
         self.__saver_factor = SaverFactor(self.__save_mode)
 
-    def connect(self):
-        # 连接POP3服务器(SSL):
-        try:
-            self.__connection = poplib.POP3_SSL(self.__pop3_server)
-        except OSError as e:
-            print('连接服务器失败，请检查服务器地址或网络连接。')
-            self.close()
-            return
-
-        self.__connection.set_debuglevel(False)
-        poplib._MAXLINE = 32768     # POP3数据单行最长长度，在有些邮件中，该长度会超出协议建议值，所以适当调高
-
-        # 服务器欢迎文字:
-        print(self.__connection.getwelcome().decode())
-
-        # 登录:
-        self.__connection.user(self.__email_address)
-        try:
-            self.__connection.pass_(self.__email_password)
-        except Exception as e:
-            print(e.args)
-            print('登陆失败，请检查用户名/密码。并确保您的邮箱已开启POP3服务。')
-            self.close()
-            return
-
     def download_attachments(self):
-        if self.__connection is None:
+        if self.__receiver is None:
             return
 
         # 邮件数量和总大小:
-        mail_quantity, mail_total_size = self.__connection.stat()
+        mail_quantity, mail_total_size = self.__receiver.get_email_status()
         print('邮件总数:', mail_quantity)
-        print('邮件总大小:', EmailInfo.bytes_to_readable(mail_total_size), end='\n\n')
+        if mail_total_size > 0:
+            print('邮件总大小:', EmailInfo.bytes_to_readable(mail_total_size), end='\n\n')
 
         # mail_list中是各邮件信息，格式['number octets'] (1 octet = 8 bits)
-        response, mail_list, octets = self.__connection.list()
+        mail_list = self.__receiver.get_mail_list()
         error_count = 0
 
         # 倒序读取（从最新的开始）
-        for mail_info in reversed(mail_list):
-            mail_number = int(bytes.decode(mail_info).split()[0])  # 从mail_list解析邮件编号
-            # mail_number = 590     # debug
+        for mail_number in mail_list:
+            # mail_number = '590'     # debug
 
             try:
-                # TOP命令接收前n行，此处仅读取邮件属性，读部分数据可加快速度。TOP非所有服务器支持，若不支持请使用RETR。
-                response, content_byte, octets = self.__connection.top(mail_number, 40)
-                mail_header_end = content_byte.index(b'')
-                mail_message = self.parse_mail_byte_content(content_byte[:mail_header_end])     # 第一个空行前之是头部信息 RFC822
+                content_byte = self.__receiver.get_mail_header_bytes(mail_number)
+                mail_message = self.parse_mail_byte_content(content_byte)
                 message_info = self.__get_email_info(mail_message)
             except Exception as e:
-                print('邮件接收或解码失败，邮件编号：[', mail_number, ']  错误信息：', e)
+                print('邮件接收或解码失败，邮件编号：[%s]  错误信息：%s' % (mail_number, e))
                 error_count += 1
                 continue
 
@@ -317,25 +304,29 @@ class BatchEmail:
             email_filter.add_judge(AddressJudge(self.from_address, message_info.from_address))
             email_filter.add_judge(NameJudge(self.from_name, message_info.from_name))
 
+            # 超出设定的最早时间则结束循环
+            if DateJudge.is_earlier(message_info.date, self.date_begin + self.time_zone):
+                break
+
             if email_filter.judge_conditions():
-                response, content_byte, message_info.size = self.__connection.retr(mail_number)     # 接收完整邮件
+                content_byte, message_info.size = self.__receiver.get_full_mail_bytes(mail_number)  # 接收完整邮件
                 mail_message = self.parse_mail_byte_content(content_byte)
-                self.__save_email_attachments(mail_message, message_info)
-                print('( %d / %d )【%s】已保存，下一封' % (len(mail_list) - mail_number + 1, len(mail_list), message_info.subject))
+                file_number = self.__save_email_attachments(mail_message, message_info)
+
+                print(
+                    '( %d / %d )【%s】' % (
+                        len(mail_list) - int(mail_number) + 1, len(mail_list), message_info.subject), end='')
+                print('已保存，下一封') if file_number != 0 else print('无附件')
                 message_info.print_info()
             else:
-                print('( %d / %d )【%s】不符合筛选条件，下一封' % (len(mail_list) - mail_number + 1, len(mail_list), message_info.subject))
+                print('( %d / %d )【%s】不符合筛选条件，下一封' % (
+                    len(mail_list) - int(mail_number) + 1, len(mail_list), message_info.subject))
         print('处理完成')
         if error_count > 0:
             print('有 %d 个邮件发生错误，请手动检查' % error_count)
 
     def close(self):
-        if self.__connection is not None:
-            try:
-                self.__connection.close()
-            except OSError as e:
-                print('断开时发生错误')
-            self.__connection = None
+        self.__receiver.close()
 
     @staticmethod
     # 将邮件中的bytes数据转为字符串
@@ -357,16 +348,16 @@ class BatchEmail:
     @staticmethod
     # 把邮件内容解析为Message对象
     def parse_mail_byte_content(content_byte):
-        # 极个别邮件中，同一封邮件存在多种编码，那么就不要join后整体解码，而是每一行单独解码。情况少见，暂时忽略。
-        mail_content = b'\n'.join(content_byte)
         try:
-            mail_content = mail_content.decode()
+            mail_content = content_byte.decode()
         except UnicodeDecodeError as e:
-            mail_content = mail_content.decode(encoding='GB18030', errors='replace')   # GB18030兼容GB231、GBK
+            mail_content = content_byte.decode(encoding='GB18030', errors='replace')  # GB18030兼容GB231、GBK
 
         return Parser().parsestr(mail_content)
 
+    # 附件解析与保存，返回附件数量
     def __save_email_attachments(self, message: Message, email_info):
+        file_count = 0
         for part in message.walk():
             file_name = part.get_filename()
             if file_name:
@@ -374,26 +365,150 @@ class BatchEmail:
                 email_info.add_attachment_name(file_name)
                 data = part.get_payload(decode=True)
                 self.__saver_factor(self.save_path, file_name, data, email_info).save()
+                file_count += 1
+        return file_count
 
     def __get_email_info(self, message: Message):
         email_info = EmailInfo()
-
-        name, address = parseaddr(message.get('From'))
-        email_info.from_address = address
-        email_info.from_name = self.decode_mail_info_str(name)
-
-        # Date格式'Sat, 4 Jan 2020 11:59:25 +0800', 也有可能是'4 Jul 2019 21:37:08 +0800'
-        # 开头星期去除，部分数据末尾有附加信息，因此以首个冒号后+12截取
-        date = message.get('Date')
-        date_begin_index = 0
-        for date_begin_index in range(len(date)):
-            if '0' <= date[date_begin_index] <= '9':
-                break
-        email_info.date = date[date_begin_index:date.find(':') + 12]
 
         try:
             email_info.subject = self.decode_mail_info_str(message.get('Subject'))
         except TypeError as e:
             email_info.subject = '无主题'
 
+        name, address = parseaddr(message.get('From'))
+        email_info.from_address = address
+        email_info.from_name = self.decode_mail_info_str(name)
+
+        date = message.get('Date')
+        # 少数情况下无Data字段，Received
+        if date is None:
+            received = message.get('Received')
+            if received is None:
+                # 极少数邮件信息头内没有时间信息，偶发于一些系统发送的邮件
+                raise ValueError('该邮件收件时间解析失败，邮件主题：【%s】' % email_info.subject)
+            date = received[received.rfind(';') + 1:]
+        # Date格式'Sat, 4 Jan 2020 11:59:25 +0800', 也有可能是'4 Jul 2019 21:37:08 +0800'
+        # 开头星期去除，部分数据末尾有附加信息，因此以首个冒号后+12截取
+        date_begin_index = 0
+        for date_begin_index in range(len(date)):
+            if '0' <= date[date_begin_index] <= '9':
+                break
+        date = date.replace('GMT', '+0000')  # 部分邮件用GMT表示
+        email_info.date = date[date_begin_index:date.find(':') + 12]
+
         return email_info
+
+
+# POP3协议 邮件接收类
+class Pop3Receiver:
+    def __init__(self, host: str, email_address: str, email_password: str):
+        # 连接POP3服务器(SSL):
+        try:
+            self.__connection = poplib.POP3_SSL(host)
+        except OSError as e:
+            print('连接服务器失败，请检查服务器地址或网络连接。')
+            self.close()
+            return
+
+        self.__connection.set_debuglevel(False)
+        poplib._MAXLINE = 32768  # POP3数据单行最长长度，在有些邮件中，该长度会超出协议建议值，所以适当调高
+
+        # 服务器欢迎文字:
+        print(self.__connection.getwelcome().decode())
+
+        # 登录:
+        self.__connection.user(email_address)
+        try:
+            self.__connection.pass_(email_password)
+        except Exception as e:
+            print(e.args)
+            print('登陆失败，请检查用户名/密码。并确保您的邮箱已开启POP3服务。')
+            self.close()
+            return
+
+    def get_mail_list(self):
+        # mail_list中是各邮件信息，格式['number octets'] (1 octet = 8 bits)
+        response, mail_list, octets = self.__connection.list()
+        return [x.split()[0].decode() for x in reversed(mail_list)]
+
+    def get_email_status(self):
+        return self.__connection.stat()
+
+    def get_mail_header_bytes(self, mail_number: str):
+        # TOP命令接收前n行，此处仅读取邮件属性，读部分数据可加快速度。TOP非所有服务器支持，若不支持请使用RETR。
+        response, content_byte, octets = self.__connection.top(mail_number, 40)
+        # 第一个空行前之是头部信息 RFC822
+        try:
+            mail_header_end = content_byte.index(b'')
+        except ValueError as e:
+            mail_header_end = len(content_byte)
+        return self.__merge_bytes_list(content_byte[:mail_header_end])
+
+    def get_full_mail_bytes(self, mail_number: str):
+        response, content_byte, size = self.__connection.retr(mail_number)
+        return self.__merge_bytes_list(content_byte), size
+
+    @staticmethod
+    def __merge_bytes_list(bytes_list):
+        # 注：极个别邮件中，同一封邮件存在多种编码，那么就不要join后整体解码，而是每一行单独解码。情况少见，暂时忽略。
+        return b'\n'.join(bytes_list)
+
+    def close(self):
+        if self.__connection is not None:
+            try:
+                self.__connection.close()
+            except OSError as e:
+                print('断开时发生错误')
+            self.__connection = None
+
+
+# IMAP4协议 邮件接收类
+class ImapReceiver:
+    def __init__(self, host: str, email_address: str, email_password: str):
+        # 连接IMAP4服务器(SSL):
+        try:
+            self.__connection = imaplib.IMAP4_SSL(host)
+        except OSError as e:
+            print('连接服务器失败，请检查服务器地址或网络连接。')
+            self.close()
+            return
+
+        # 登录:
+        try:
+            s = self.__connection.login(email_address, email_password)
+        except Exception as e:
+            print(e.args)
+            print('登陆失败，请检查用户名/密码。并确保您的邮箱已开启IMAP服务。')
+            self.close()
+            return
+
+    def get_email_status(self):
+        response, data = self.__connection.status('INBOX', '(MESSAGES)')
+        quantity = int(re.findall('\d+', data[0].split()[2].decode())[0])
+        return quantity, -1
+
+    def get_mail_list(self):
+        self.__connection.select()
+        response, mail_list = self.__connection.search(None, 'ALL')
+        return [x.decode() for x in reversed(mail_list[0].split())]
+
+    def get_mail_header_bytes(self, mail_number: str):
+        response, data = self.__connection.fetch(mail_number, '(BODY[HEADER])')
+        if data[0] is None:
+            # 极少数邮件无法获取到内容，一般是系统发送的邮件
+            raise ValueError('邮件解析失败')
+        return data[0][1]
+
+    def get_full_mail_bytes(self, mail_number: str):
+        response, data = self.__connection.fetch(mail_number, '(RFC822)')
+        size = int(re.findall('\d+', data[0][0].split()[2].decode())[0])
+        return data[0][1], size
+
+    def close(self):
+        if self.__connection is not None:
+            try:
+                self.__connection.close()
+            except OSError as e:
+                print('断开时发生错误')
+            self.__connection = None
