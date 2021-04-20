@@ -1,3 +1,5 @@
 /.idea/
 /test.py
 /unit_test.py
+.vscode
+__pycache__

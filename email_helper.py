@@ -9,6 +9,8 @@ import poplib
 import datetime
 import imaplib
 import email
+import time
+from dateutil import tz
 
 
 # 邮件信息类
@@ -287,8 +289,7 @@ class BatchEmail:
 
         # 倒序读取（从最新的开始）
         for mail_number in mail_list:
-            # mail_number = '590'     # debug
-
+            # mail_number = '2075'     # debug
             try:
                 content_byte = self.__receiver.get_mail_header_bytes(mail_number)
                 mail_message = self.parse_mail_byte_content(content_byte)
@@ -383,11 +384,13 @@ class BatchEmail:
         date = message.get('Date')
         # 少数情况下无Data字段，Received
         if date is None:
-            received = message.get('Received')
-            if received is None:
-                # 极少数邮件信息头内没有时间信息，偶发于一些系统发送的邮件
+            if date is None:
+                date = decodeTimeFromReceived(message)
+            if date is None:
+                date = decodeTimeFromXQQMid(message)
+            # 如果还不能获取到Date则报错。极少数邮件信息头内没有时间信息，偶发于一些系统发送的邮件
+            if date is None:
                 raise ValueError('该邮件收件时间解析失败，邮件主题：【%s】' % email_info.subject)
-            date = received[received.rfind(';') + 1:]
         # Date格式'Sat, 4 Jan 2020 11:59:25 +0800', 也有可能是'4 Jul 2019 21:37:08 +0800'
         # 开头星期去除，部分数据末尾有附加信息，因此以首个冒号后+12截取
         date_begin_index = 0
@@ -395,9 +398,31 @@ class BatchEmail:
             if '0' <= date[date_begin_index] <= '9':
                 break
         date = date.replace('GMT', '+0000')  # 部分邮件用GMT表示
+        # 最终保存的Date格式：'4 Jan 2020 11:59:25 +0800'
         email_info.date = date[date_begin_index:date.find(':') + 12]
 
         return email_info
+
+
+# 尝试从X-QQ-mid字段解析邮件时间
+def decodeTimeFromXQQMid(message: Message):
+    field_str = message.get('X-QQ-mid')
+    if field_str is None:
+        return None
+
+    # X-QQ-mid格式例如：newapiserver5t1618419145t10192，时间是长度为10的时间戳，头尾加上t来分割
+    time_str = re.findall('t[0-9]{10}t', field_str)
+    if len(time_str) == 0:
+        return None
+    time = datetime.datetime.fromtimestamp(float(time_str[0][1:-1]), tz=tz.gettz())
+    return time.strftime('%d %b %Y %H:%M:%S %z')
+
+# 尝试从Received字段解析邮件时间
+def decodeTimeFromReceived(message: Message):
+    field_str = message.get('Received')
+    if field_str is None:
+        return None
+    return received[received.rfind(';') + 1:]
 
 
 # POP3协议 邮件接收类
@@ -490,7 +515,8 @@ class ImapReceiver:
 
     def get_mail_list(self):
         self.__connection.select()
-        response, mail_list = self.__connection.search(None, 'ALL')
+        # TODO IMAP协议支持搜索，可以把筛选条件放到这里，不再需要遍历判断
+        response, mail_list = self.__connection.search(None, '(ALL)')
         return [x.decode() for x in reversed(mail_list[0].split())]
 
     def get_mail_header_bytes(self, mail_number: str):
