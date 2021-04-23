@@ -1,7 +1,7 @@
 """
 https://github.com/Li-Jiajie/BatchAttachmentDownloader
 
-BatchAttachmentDownloader   v1.3.2
+BatchAttachmentDownloader   v1.4.0
 邮件附件批量下载
 Python 3开发，支持IMAP4与POP3协议
 
@@ -13,7 +13,7 @@ Python 3开发，支持IMAP4与POP3协议
 Jiajie Li
 """
 
-import email_helper
+import downloader
 
 # ************************请设置以下参数************************
 
@@ -22,7 +22,7 @@ EMAIL_ADDRESS = '*****your email address*****'
 # 邮箱密码  （必填）
 EMAIL_PASSWORD = '*****your email password*****'
 
-# 邮件协议  （必填，POP3或IMAP）
+# 邮件协议  （必填，POP3或IMAP4）
 EMAIL_PROTOCOL = 'POP3'
 # 服务器地址(SSL)    （必填，请根据协议填入合适的地址）
 SERVER_ADDRESS = 'pop.qq.com'
@@ -54,7 +54,7 @@ SAVE_MODE = 1
 
 if __name__ == '__main__':
     # 服务器连接与邮箱登录
-    downloader = email_helper.BatchEmail(EMAIL_PROTOCOL, SERVER_ADDRESS, EMAIL_ADDRESS, EMAIL_PASSWORD)
+    downloader = downloader.BatchEmail(EMAIL_PROTOCOL, SERVER_ADDRESS, EMAIL_ADDRESS, EMAIL_PASSWORD)
 
     # 选项设置
     downloader.set_save_mode(SAVE_MODE)
