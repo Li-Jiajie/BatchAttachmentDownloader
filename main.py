@@ -1,7 +1,7 @@
 """
 https://github.com/Li-Jiajie/BatchAttachmentDownloader
 
-BatchAttachmentDownloader   v1.3.0
+BatchAttachmentDownloader   v1.3.2
 邮件附件批量下载
 Python 3开发，支持IMAP4与POP3协议
 
@@ -9,7 +9,7 @@ Python 3开发，支持IMAP4与POP3协议
 
 使用场景：通过邮箱收作业、调查等，批量下载附件    等
 
-2020.10.22
+2021.04.23
 Jiajie Li
 """
 
@@ -28,7 +28,7 @@ EMAIL_PROTOCOL = 'POP3'
 SERVER_ADDRESS = 'pop.qq.com'
 
 # 附件保存位置
-SAVE_PATH = 'F:\\Email-Attachments'
+SAVE_PATH = r'F:\Email-Attachments'
 # 筛选起止时间    yyyy-MM-dd HH:mm:ss
 DATE_BEGIN, DATE_END = '2020-10-20 00:00', '2020-11-5 18:00'  # 筛选起止时间（包含此时间）
 # 时区 默认东八区北京时间，如需更改请按如下格式更改

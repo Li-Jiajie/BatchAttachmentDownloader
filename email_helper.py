@@ -1,16 +1,13 @@
 import abc
-import os
-import re
-from email.parser import Parser
-from email.header import decode_header
-from email.utils import parseaddr
-from email.message import Message
-import poplib
 import datetime
 import imaplib
-import email
-import time
-from dateutil import tz
+import os
+import poplib
+import re
+from email.header import decode_header
+from email.message import Message
+from email.parser import Parser
+from email.utils import parseaddr
 
 
 # 邮件信息类
@@ -188,17 +185,15 @@ class DateJudge(EmailJudge):
 
     def judge(self):
         # Date格式'4 Jan 2020 11:59:25 +0800'
-        date_mail = datetime.datetime.strptime(self.__email_date, '%d %b %Y %H:%M:%S %z')
-        date_begin = datetime.datetime.strptime((self.__date_begin + self.__time_zone), '%Y-%m-%d %H:%M%z')
-        date_end = datetime.datetime.strptime((self.__date_end + self.__time_zone), '%Y-%m-%d %H:%M%z')
+        date_mail = self.__email_date
+        date_begin = datetime.datetime.strptime((self.__date_begin + self.__time_zone), '%Y-%m-%d %H:%M%z').timestamp()
+        date_end = datetime.datetime.strptime((self.__date_end + self.__time_zone), '%Y-%m-%d %H:%M%z').timestamp()
         return date_begin < date_mail < date_end
 
     @staticmethod
     # 比较是否比Target时间更早，用于结束邮件遍历的循环。包含时区。
     def is_earlier(email_time, target_time):
-        email_datetime = datetime.datetime.strptime(email_time, '%d %b %Y %H:%M:%S %z')
-        target_datetime = datetime.datetime.strptime(target_time, '%Y-%m-%d %H:%M%z')
-        return email_datetime < target_datetime
+        return email_time < datetime.datetime.strptime(target_time, '%Y-%m-%d %H:%M%z').timestamp()
 
 
 # 邮件主题判断
@@ -299,6 +294,7 @@ class BatchEmail:
                 error_count += 1
                 continue
 
+            # TODO filter移到外层
             email_filter = EmailFilter()
             email_filter.add_judge(DateJudge(self.date_begin, self.date_end, self.time_zone, message_info.date))
             email_filter.add_judge(SubjectJudge(self.subject, message_info.subject))
@@ -314,9 +310,8 @@ class BatchEmail:
                 mail_message = self.parse_mail_byte_content(content_byte)
                 file_number = self.__save_email_attachments(mail_message, message_info)
 
-                print(
-                    '( %d / %d )【%s】' % (
-                        len(mail_list) - int(mail_number) + 1, len(mail_list), message_info.subject), end='')
+                print('( %d / %d )【%s】' % (
+                    len(mail_list) - int(mail_number) + 1, len(mail_list), message_info.subject), end='')
                 print('已保存，下一封') if file_number != 0 else print('无附件')
                 message_info.print_info()
             else:
@@ -382,30 +377,33 @@ class BatchEmail:
         email_info.from_name = self.decode_mail_info_str(name)
 
         date = message.get('Date')
-        # 少数情况下无Data字段，Received
+        # 少数情况下无Data字段，尝试从其他字段中获取时间
         if date is None:
             if date is None:
-                date = decodeTimeFromReceived(message)
+                date = decode_time_from_received(message)
             if date is None:
-                date = decodeTimeFromXQQMid(message)
+                date = decode_time_from_x_qq_mid(message)
             # 如果还不能获取到Date则报错。极少数邮件信息头内没有时间信息，偶发于一些系统发送的邮件
             if date is None:
                 raise ValueError('该邮件收件时间解析失败，邮件主题：【%s】' % email_info.subject)
-        # Date格式'Sat, 4 Jan 2020 11:59:25 +0800', 也有可能是'4 Jul 2019 21:37:08 +0800'
+
+        # Date格式统一，最终格式：'4 Jan 2020 11:59:25 +0800' (%d %b %Y %H:%M:%S %z)
+        # 通常源数据格式为'Sat, 4 Jan 2020 11:59:25 +0800', 也有可能是'4 Jul 2019 21:37:08 +0800'
         # 开头星期去除，部分数据末尾有附加信息，因此以首个冒号后+12截取
         date_begin_index = 0
         for date_begin_index in range(len(date)):
             if '0' <= date[date_begin_index] <= '9':
                 break
         date = date.replace('GMT', '+0000')  # 部分邮件用GMT表示
-        # 最终保存的Date格式：'4 Jan 2020 11:59:25 +0800'
-        email_info.date = date[date_begin_index:date.find(':') + 12]
+        date = date[date_begin_index:date.find(':') + 12]
+        # 最后以时间戳保存
+        email_info.date = datetime.datetime.strptime(date, '%d %b %Y %H:%M:%S %z').timestamp()
 
         return email_info
 
 
 # 尝试从X-QQ-mid字段解析邮件时间
-def decodeTimeFromXQQMid(message: Message):
+def decode_time_from_x_qq_mid(message: Message):
     field_str = message.get('X-QQ-mid')
     if field_str is None:
         return None
@@ -414,15 +412,16 @@ def decodeTimeFromXQQMid(message: Message):
     time_str = re.findall('t[0-9]{10}t', field_str)
     if len(time_str) == 0:
         return None
-    time = datetime.datetime.fromtimestamp(float(time_str[0][1:-1]), tz=tz.gettz())
+    time = datetime.datetime.fromtimestamp(float(time_str[0][1:-1]), datetime.timezone.utc)
     return time.strftime('%d %b %Y %H:%M:%S %z')
 
+
 # 尝试从Received字段解析邮件时间
-def decodeTimeFromReceived(message: Message):
+def decode_time_from_received(message: Message):
     field_str = message.get('Received')
     if field_str is None:
         return None
-    return received[received.rfind(';') + 1:]
+    return field_str[field_str.rfind(';') + 1:]
 
 
 # POP3协议 邮件接收类
