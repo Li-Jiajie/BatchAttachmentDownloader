@@ -39,6 +39,11 @@ FROM_ADDRESS = ''
 FROM_NAME = ''
 # 筛选包含此内容的邮件主题，''表示全部邮件主题
 SUBJECT = ''
+# 筛选包含此收件人地址，''表示全部邮件主题 xxxxx@xxxxx.com
+TO_ADDRESS = ""
+# 筛选包含此收件人名称，''表示全部邮件主题
+TO_NAME = ""
+
 """
     保存模式    SAVE_MODE
 【0：所有附件存入一个文件夹】
@@ -46,6 +51,7 @@ SUBJECT = ''
 【2：每个邮件主题一个文件夹】
 【3：每个发件人的每个邮件主题一个文件夹】
 【4：每个发件人昵称一个文件夹】
+【5：每个邮件主题+日期前缀一个文件夹】
 """
 SAVE_MODE = 1
 
@@ -65,6 +71,8 @@ if __name__ == '__main__':
     downloader.from_name = FROM_NAME
     downloader.from_address = FROM_ADDRESS
     downloader.subject = SUBJECT
+    downloader.to_address = TO_ADDRESS
+    downloader.to_name = TO_NAME
 
     # 下载附件
     downloader.download_attachments()
