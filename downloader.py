@@ -21,6 +21,8 @@ class BatchEmail:
         self.from_address = ''  # 筛选属性：发件人地址
         self.from_name = ''  # 筛选属性：发件人姓名
         self.subject = ''  # 筛选属性：邮件主题
+        self.to_address = ""  # 筛选属性：收件人地址
+        self.to_name = ""  # 筛选属性：收件人姓名
 
         self.__saver_factor = None
 
@@ -67,6 +69,8 @@ class BatchEmail:
             email_filter.add_judge(SubjectJudge(self.subject, message_info.subject))
             email_filter.add_judge(AddressJudge(self.from_address, message_info.from_address))
             email_filter.add_judge(NameJudge(self.from_name, message_info.from_name))
+            email_filter.add_judge(RecipientAddressJudge(self.to_address, message_info.to_addresses))
+            email_filter.add_judge(RecipientNameJudge(self.to_name, message_info.to_addresses))
 
             # 超出设定的最早时间则结束循环
             if DateJudge.is_earlier(message_info.date, self.date_begin + self.time_zone):
@@ -118,6 +122,18 @@ class BatchEmail:
 
         return Parser().parsestr(mail_content)
 
+    # 解析收件人地址名称
+    def __parse_mail_reciver_info(self, to_address_list):
+        to_names = list()
+        to_addresses = list()
+        for address in to_address_list[0].split(","):
+            name, email = parseaddr(address)
+            decoded_string = self.decode_mail_info_str(name)
+
+            to_names.append(decoded_string)
+            to_addresses.append(email)
+        return to_names, to_addresses
+    
     # 附件解析与保存，返回附件数量
     def __save_email_attachments(self, message: Message, email_info):
         file_count = 0
@@ -142,6 +158,9 @@ class BatchEmail:
         name, address = parseaddr(message.get('From'))
         email_info.from_address = address
         email_info.from_name = self.decode_mail_info_str(name)
+        email_info.to_names, email_info.to_addresses = self.__parse_mail_reciver_info(
+            message.get_all("To")
+        )
 
         date = message.get('Date')
         # 少数情况下无Data字段，尝试从其他字段中获取时间
