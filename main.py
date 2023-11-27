@@ -39,10 +39,12 @@ FROM_ADDRESS = ''
 FROM_NAME = ''
 # 筛选包含此内容的邮件主题，''表示全部邮件主题
 SUBJECT = ''
+
+# 重要说明：收件人名称和收件人地址目前只能二选一设置，同时设置将会失效
 # 筛选包含此收件人地址，''表示全部邮件主题 xxxxx@xxxxx.com
-TO_ADDRESS = ""
+TO_ADDRESS = ''
 # 筛选包含此收件人名称，''表示全部邮件主题
-TO_NAME = ""
+TO_NAME = ''
 
 """
     保存模式    SAVE_MODE
