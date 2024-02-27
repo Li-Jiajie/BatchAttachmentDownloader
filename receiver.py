@@ -68,7 +68,7 @@ class Pop3Receiver:
             return
 
         self.__connection.set_debuglevel(False)
-        poplib._MAXLINE = 32768  # POP3数据单行最长长度，在有些邮件中，该长度会超出协议建议值，所以适当调高
+        poplib._MAXLINE = 65356  # POP3数据单行最长长度，在有些邮件中，该长度会超出协议建议值，所以适当调高
 
         # 服务器欢迎文字:
         print(self.__connection.getwelcome().decode())

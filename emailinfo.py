@@ -9,6 +9,8 @@ class EmailInfo(object):
         self.subject = None
         self.from_address = None
         self.from_name = None
+        self.to_addresses = None
+        self.to_names = None
         self.size = None
         self.attachments_name = []
 
@@ -30,6 +32,8 @@ class EmailInfo(object):
         print('subject:', self.subject)
         print('from_address:', self.from_address)
         print('from_name:', self.from_name)
+        # print("to_address:", self.to_addresses)
+        # print("to_name:", self.to_names)
         print('date:', datetime.datetime.fromtimestamp(self.date))
         print('attachments:', self.attachments_name)
         print('total size:', self.bytes_to_readable(self.size))
@@ -95,6 +99,25 @@ class NameJudge(EmailJudge):
 
     def judge(self):
         return self.__name_include in self.__email_from_name
+
+# 邮件收件人地址判断
+class RecipientAddressJudge(EmailJudge):
+    def __init__(self, recipient_include, email_recipient_address):
+        self.__recipient_include = recipient_include
+        self.__email_recipient_address = email_recipient_address
+
+    def judge(self):
+        return self.__recipient_include in self.__email_recipient_address
+
+
+# 邮件收件人姓名判断
+class RecipientNameJudge(EmailJudge):
+    def __init__(self, recipient_name, email_recipient_names):
+        self.__recipient_include = recipient_name
+        self.__email_recipient_names = email_recipient_names
+
+    def judge(self):
+        return self.__recipient_include in self.__email_recipient_names
 
 
 # 邮件筛选器

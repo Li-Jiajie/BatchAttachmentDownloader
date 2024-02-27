@@ -1,4 +1,5 @@
 import abc
+import datetime
 import os
 import re
 
@@ -96,6 +97,19 @@ class AliasClassifySaver(Saver):
     def save(self):
         self._save_file(os.path.join(self._root_path, self._from_alias))
 
+# 模式5：每个邮件主题带上日期前缀的一个文件夹
+class DateSubjectClassifySaver(Saver):
+    def __init__(self, root_path, file_name, file_data, email_subject, email_date):
+        super().__init__(root_path, file_name, file_data)
+        self._email_subject = self.normalize_directory_name(email_subject)
+        date = datetime.datetime.fromtimestamp(email_date)
+        formatted_date = date.strftime("%m-%d")
+        self._email_date = formatted_date
+
+    def save(self):
+        self._save_file(
+            os.path.join(self._root_path, self._email_date + "_" + self._email_subject)
+        )
 
 # 储存器工厂
 class SaverFactor:
@@ -122,5 +136,9 @@ class SaverFactor:
                                                email_info.subject)
         elif self.__mode == 4:
             return AliasClassifySaver(root_path, file_name, file_data, email_info.from_name)
+        elif self.__mode == 5:
+            return DateSubjectClassifySaver(
+                root_path, file_name, file_data, email_info.subject, email_info.date
+            )
         else:
             return None
